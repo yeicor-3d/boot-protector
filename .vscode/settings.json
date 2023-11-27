@@ -4,7 +4,7 @@
       {
         "match": "\\.py$",
         "isAsync": false,
-        "cmd": "poetry run python ${file}"
+        "cmd": "venv/bin/python ${file}"
       }
     ]
   }
