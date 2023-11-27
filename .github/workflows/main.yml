@@ -26,13 +26,14 @@ jobs:
 
     steps:
       - uses: "actions/checkout@v4"
-
+      
+      - uses: snok/install-poetry@v1
       - uses: "actions/setup-python@v4"
         with:
           python-version: "3.11"
           cache: "poetry"
 
-      - run: "poetry install"
+      - run: "poetry install --no-interaction --no-root"
 
       - uses: "Yeicor/cadquery-action@v3.1.0"
         with:
