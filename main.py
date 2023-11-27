@@ -16,7 +16,7 @@ eps = 1e-5 * MM  # A small number
 # ================== MODELLING ==================
 
 with BuildPart() as obj:
-  Box(100*MM, 100*MM, 20*MM)
+  Box(100*MM, 100*MM, 1*MM)
 
 # ================== SHOWING/EXPORTING ==================
 
@@ -29,9 +29,9 @@ try:
         tmp_socket.close()
         ocp_vscode.reset_show()
         ocp_vscode.show_all()
-        export = False # If the connection fails, export to STL instead
+        export = False  # If the connection fails, export to STL instead
     elif 'show_object' in locals():
-        show_object(obj, 'boot-protector') # type: ignore
+        show_object(obj, 'boot-protector')  # type: ignore
 except Exception as ex:
     print("Cannot show model, exporting to STL instead (%s)" % ex)
     
