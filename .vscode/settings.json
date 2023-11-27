@@ -1,0 +1,11 @@
+{
+  "emeraldwalk.runonsave": {
+    "commands": [
+      {
+        "match": "\\.py$",
+        "isAsync": false,
+        "cmd": "poetry run python ${file}"
+      }
+    ]
+  }
+}

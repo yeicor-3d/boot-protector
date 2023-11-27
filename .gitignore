@@ -1,0 +1,6 @@
+/venv/
+/build/
+/.idea/
+/*.iml
+/*.stl
+/.ocp_vscode
