@@ -36,4 +36,7 @@ except Exception as ex:
     print("Cannot show model, exporting to STL instead (%s)" % ex)
     
 if export:
-    obj.part.export_stl('boot-protector.stl')
+    if hasattr(obj, 'part'):
+        obj.part.export_stl('boot-protector.stl')
+    else:
+        export_stl(obj, 'boot-protector.stl')
