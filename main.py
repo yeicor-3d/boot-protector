@@ -15,8 +15,8 @@ eps = 1e-5 * MM  # A small number
 
 # ================== MODELLING ==================
 
-with BuildPart() as obj:
-  Box(100*MM, 100*MM, 1*MM)
+boot = Compound.make_compound([import_stl('boot.stl')])
+obj = boot
 
 # ================== SHOWING/EXPORTING ==================
 
