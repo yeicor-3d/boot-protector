@@ -2,11 +2,11 @@
 from contextlib import suppress
 from math import *
 from os import getenv
-from typing import Optional
 from build123d import *
 from tqdm import tqdm
 with suppress(ImportError):  # Optional
     import ocp_vscode
+from OCP.gp import (gp_Quaternion, gp_Extrinsic_XYZ, gp_Vec)
 
 # %%
 # ================== PARAMETERS ==================
@@ -15,6 +15,8 @@ tol = 0.1 * MM  # Tolerance (tighter than usual)
 wall_min = 0.4 * MM  # Minimum wall width
 wall = 3 * wall_min  # Recommended width for most walls of this print
 eps = 1e-5 * MM  # A small number
+# Whether to generate the final model or a simplified one
+final_model = getenv("final") is not None
 
 # Sampling surface parameters
 samples_yaw = 8
@@ -26,13 +28,16 @@ prot_thickness = 2 * wall
 prot_clip_x = -2 * CM
 prot_clip_z = 1.75 * CM
 
+# Sewing parameters
+sew_hole_radius = (1.5 * MM) if final_model else (5 * MM)
+sew_hole_sep = 2 * 2 * sew_hole_radius
 
 # ================== MODELLING ==================
 
 # Load the boot model, which must be aligned with the base at the origin, centered in X and Y and with forward direction in X+
 # Slow import...
-boot = Mesher().read("boot.stl" if getenv(
-    "final_boot") else "boot-simplified.stl")[0]
+boot = Mesher().read(
+    "boot.stl" if final_model else "boot-simplified.stl")[0]
 boot_bb = boot.bounding_box()
 
 boot_relevant = boot & Box(boot_bb.max.X + 2 - prot_clip_x, boot_bb.size.Y, boot_bb.max.Z, align=(
@@ -78,8 +83,8 @@ for yaw_sample in tqdm(map(lambda x: x / (samples_yaw-1), range(samples_yaw))):
     for pitch_sample in tqdm(map(lambda x: x / (samples_pitch - 1), range(samples_pitch))):
         if abs(pitch_sample - 0.5) > 0.5:
             continue  # Ignore extreme pitch samples
-        loc, _ = take_subsample(yaw_sample, pitch_sample)
-        all_collisions_line.append(loc)
+        pos, _ = take_subsample(yaw_sample, pitch_sample)
+        all_collisions_line.append(pos)
     all_collisions.append(all_collisions_line)
 all_collisions_debug = [item for row in all_collisions for item in row]
 
@@ -90,21 +95,57 @@ with BuildPart() as obj:
     # Clean cut for post-processing!
     add(boot_prot_relevant_filter, mode=Mode.INTERSECT)
 
-    # # Extras: holes
-    obj_corner_edges = obj.edges().group_by(Axis.Z)[0]
-    obj_corner_edges += obj.edges().group_by(Axis.X)[0]
+    # # Extras: holes along edges
+    obj_corner_edges = obj.edges().group_by(
+        Axis.Z)[0].group_by(SortBy.LENGTH)[-1]  # Not outer, but works anyway
+    obj_corner_edges += obj.edges().group_by(
+        Axis.X)[0].group_by(SortBy.LENGTH)[-1]
+    top_face = obj.faces().group_by(Axis.Z)[-2][0]
+    for edge, inside_dir in [(obj_corner_edges[0], Vector(0, 0, 1)), (obj_corner_edges[-1], Vector(1, 0, 0))]:
+        # For each edge, compute and add holes
+        steps = edge.length / sew_hole_sep
+        step_relative_size = steps / int(steps)
+        for step in tqdm(range(1, int(steps))):
+            progress = step / steps * step_relative_size
 
-    # # Extras: extrude bottom and fillet
-    # extrude(obj.faces().group_by(Axis.Z, tol_digits=1)
-    #         [0], prot_clip_z * 0.75, dir=(0, 0, -1))
-    # fillet_bottom = obj.edges().group_by(Axis.Z)[0].filter_by(
-    #     lambda x: x.length > prot_thickness * 2)
-    # fillet(fillet_bottom[0], prot_thickness/2)
-    pass
+            # Extract tangent from edge
+            tangent = edge % progress
+
+            # Extract basic data from edge
+            pos = edge@progress + inside_dir *\
+                (sew_hole_radius + prot_thickness)
+
+            # Maybe: project the position on the surface
+
+            # Compute the orientation of the hole
+            wanted_up = tangent.cross(inside_dir)
+            quat = gp_Quaternion(gp_Vec(0, 0, 1), gp_Vec(
+                wanted_up.X, wanted_up.Y, wanted_up.Z))
+            angles = quat.GetEulerAngles(gp_Extrinsic_XYZ)
+            loc = Location(pos, (degrees(angles[0]), degrees(
+                angles[1]), degrees(angles[2])))
+
+            # Build the hole
+            with BuildPart(loc, mode=Mode.SUBTRACT):
+                Cylinder(sew_hole_radius, boot_bb.size.Y)
+
+            # Clean up the hole with a fillet
+            fillet(obj.edges(Select.LAST), prot_thickness/2.1)
+
+    # Extras: extrude bottom and fillet all remaining sharp edges
+    extrude(obj.faces().group_by(Axis.Z)[
+            0], prot_clip_z * 0.75, dir=(0, 0, -1))
+    fillet_edges = obj.edges().group_by(Axis.X)[0]
+    fillet_edges -= fillet_edges.group_by(SortBy.LENGTH)[0]
+    fillet_edges -= fillet_edges.group_by(SortBy.LENGTH)[0]
+    fillet(fillet_edges, prot_thickness/2.1)
+    fillet_edges = obj.edges().group_by(Axis.Z)[0]
+    fillet(fillet_edges, prot_thickness/2.1)
 
 if "ocp_vscode" in locals():
     ocp_vscode.reset_show()
     ocp_vscode.show_all()
+    export = False
 
 # %%
 # ================== SHOWING/EXPORTING ==================
