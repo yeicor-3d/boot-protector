@@ -77,6 +77,7 @@ def take_subsample(yaw_rel: float, pitch_rel: float) -> tuple[Vector, Vector]:
     return pos + normal * prot_offset, normal
 
 
+# TODO: New sampling plan: faces().normal.Z > 0, take vertices(), smooth them and add a special bottom layer
 all_collisions = []
 for yaw_sample in tqdm(map(lambda x: x / (samples_yaw-1), range(samples_yaw))):
     all_collisions_line = []
@@ -145,7 +146,6 @@ with BuildPart() as obj:
 if "ocp_vscode" in locals():
     ocp_vscode.reset_show()
     ocp_vscode.show_all()
-    export = False
 
 # %%
 # ================== SHOWING/EXPORTING ==================
