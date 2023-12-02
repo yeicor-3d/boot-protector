@@ -1,10 +1,11 @@
 # %%
 from contextlib import suppress
+from math import *
 from os import getenv
+from typing import Optional
 from build123d import *
-
-with suppress(ImportError):
-    # Optional, for visualizing the model in VSCode instead of CQ-editor or exporting to STL
+from tqdm import tqdm
+with suppress(ImportError):  # Optional
     import ocp_vscode
 
 # %%
@@ -15,10 +16,15 @@ wall_min = 0.4 * MM  # Minimum wall width
 wall = 3 * wall_min  # Recommended width for most walls of this print
 eps = 1e-5 * MM  # A small number
 
-# ...
-protection_thickness = 2 * wall
-samples_pitch = 10  # Number of pitch angles (up-down front) to sample
-samples_yaw = 10  # Number of yaw angles (left-right front) to sample
+# Sampling surface parameters
+samples_yaw = 8
+samples_pitch = 14
+
+# Protection parameters
+prot_offset = 2 * MM
+prot_thickness = 2 * wall
+prot_clip_x = -2 * CM
+prot_clip_z = 1.75 * CM
 
 
 # ================== MODELLING ==================
@@ -27,34 +33,74 @@ samples_yaw = 10  # Number of yaw angles (left-right front) to sample
 # Slow import...
 boot = Mesher().read("boot.stl" if getenv(
     "final_boot") else "boot-simplified.stl")[0]
+boot_bb = boot.bounding_box()
 
-boot_half_x = boot.bounding_box().size.X / 2
-boot_half_y = boot.bounding_box().size.Y / 2
+boot_relevant = boot & Box(boot_bb.max.X + 2 - prot_clip_x, boot_bb.size.Y, boot_bb.max.Z, align=(
+    Align.MIN, Align.CENTER, Align.MIN)).translate((prot_clip_x, boot_bb.center().Y, 0))
+
+boot_prot_relevant_filter = Box(boot_bb.max.X + 2 - prot_clip_x + prot_thickness, boot_bb.size.Y + prot_thickness*4, boot_bb.max.Z, align=(
+    Align.MIN, Align.CENTER, Align.MIN)).translate((prot_clip_x, boot_bb.center().Y, prot_clip_z))
+boot_prot_relevant = boot & boot_prot_relevant_filter
+
 
 # %%
 
-all_lines = []
-for yaw_sample in map(lambda x: x / (samples_yaw-1), range(samples_yaw)):
-    with BuildLine(Plane.XY.rotated((0, -90 * yaw_sample, 0))) as line_tmp:
-        CenterArc((0, 0, 0), boot_half_x + 1, -70, 140)
-    all_lines.append(line_tmp)
+def take_subsample(yaw_rel: float, pitch_rel: float) -> tuple[Vector, Vector]:
+    """Returns the result of sampling the surface of the boot, given "yaw" and "pitch" angles"""
+    def mix(v1, v2, by):
+        return v1 * (1 - by) + v2 * by
+
+    # HACK: Focus yaw samples towards the bottom of the boot
+    yaw_rel = mix(yaw_rel ** 3, yaw_rel, abs(pitch_rel-0.5) * 2)
+    # HACK: Focus pitch samples towards the center of the boot
+    pitch_rel = tan(1.9 * (pitch_rel - 0.5)) / 3 + 0.5
+
+    # HACK: Extend the surface samples a little bit to cut them cleanly later
+    extend_surf = prot_thickness * 3
+
+    offset = Vector(prot_clip_x * yaw_rel - extend_surf,
+                    0, prot_clip_z - extend_surf)
+    with BuildLine(Plane.XY.move(Location(offset, (0, yaw_rel * -90, 0)))) as support_line:
+        CenterArc((0, 0), boot_bb.size.X, -89, 178)
+
+    ray_from = support_line.line@pitch_rel
+    ray_to = offset
+
+    # Grab the position of the first intersection of the ray with the boot
+    pos, normal = boot.find_intersection(
+        Axis(ray_from, ray_to - ray_from))[0]
+    return pos + normal * prot_offset, normal
+
 
 all_collisions = []
-for pitch_sample in map(lambda x: x / (samples_pitch-1), range(samples_pitch)):
+for yaw_sample in tqdm(map(lambda x: x / (samples_yaw-1), range(samples_yaw))):
     all_collisions_line = []
-    for line in all_lines:
-        # Throw a ray to the center of the boot
-        ray_from = line._obj@pitch_sample
-        ray_to = Vector(0, 0, 0)
-        loc = boot.find_intersection(
-            Axis(ray_from, ray_to - ray_from))[0][0]  # Position of first
-        # print("Ray from %s to %s: %s" % (ray_from, ray_to, res))
+    for pitch_sample in tqdm(map(lambda x: x / (samples_pitch - 1), range(samples_pitch))):
+        if abs(pitch_sample - 0.5) > 0.5:
+            continue  # Ignore extreme pitch samples
+        loc, _ = take_subsample(yaw_sample, pitch_sample)
         all_collisions_line.append(loc)
     all_collisions.append(all_collisions_line)
+all_collisions_debug = [item for row in all_collisions for item in row]
 
 with BuildPart() as obj:
-    add(Face.make_surface_from_array_of_points(
-        all_collisions).thicken(protection_thickness))
+    surf = Face.make_surface_from_array_of_points(all_collisions)
+    add(surf.thicken(-prot_thickness))
+
+    # Clean cut for post-processing!
+    add(boot_prot_relevant_filter, mode=Mode.INTERSECT)
+
+    # # Extras: holes
+    obj_corner_edges = obj.edges().group_by(Axis.Z)[0]
+    obj_corner_edges += obj.edges().group_by(Axis.X)[0]
+
+    # # Extras: extrude bottom and fillet
+    # extrude(obj.faces().group_by(Axis.Z, tol_digits=1)
+    #         [0], prot_clip_z * 0.75, dir=(0, 0, -1))
+    # fillet_bottom = obj.edges().group_by(Axis.Z)[0].filter_by(
+    #     lambda x: x.length > prot_thickness * 2)
+    # fillet(fillet_bottom[0], prot_thickness/2)
+    pass
 
 if "ocp_vscode" in locals():
     ocp_vscode.reset_show()
