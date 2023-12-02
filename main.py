@@ -21,11 +21,14 @@ eps = 1e-5 * MM  # A small number
 # ================== MODELLING ==================
 
 # Slow import...
-boot = Mesher().read("boot.stl" if getenv("final_boot") else "boot-simplified.stl")
+boot = Mesher().read("boot.stl" if getenv(
+    "final_boot") else "boot-simplified.stl")[0]
 
 # %%
 
-# obj = boot - Box(1 * MM, 1 * MM, 1 * MM, mode=Mode.SUBTRACT)
+with BuildPart() as obj:
+    Box(20*CM, 20*CM, 20*CM)
+    add(boot, mode=Mode.SUBTRACT)
 
 if "ocp_vscode" in locals():
     ocp_vscode.reset_show()
