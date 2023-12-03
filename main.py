@@ -19,10 +19,10 @@ eps = 1e-5 * MM  # A small number
 final_model = getenv("final") is not None
 
 # Sampling surface parameters
-samples = 4, 4  # Number of samples along X and Y
-spline_vertices = 5  # Mitigates instability in the spline
+samples = 15, 20  # Number of samples along X and Y
+spline_vertices = 3  # Mitigates instability in the spline
 min_samples_dist = 2 * MM  # Mitigates instability in the spline
-boot_front_dist = 2 * MM  # Mitigates instability in the surface
+boot_front_dist = tol  # Mitigates instability in the surface
 
 # Protection parameters
 prot_offset = 2 * MM
@@ -52,6 +52,13 @@ boot_rel_bb = boot_rel.bounding_box()
 
 # %%
 
+
+def remove_duplicates_keep_order(seq):
+    seen = set()
+    seen_add = seen.add
+    return [x for x in seq if not (x in seen or seen_add(x))]
+
+
 # Create a surface of all relevant up-facing faces
 surf_raw = boot_rel.faces().group_by(
     lambda f: f.normal_at(f.center()).Z > eps)[-1]
@@ -63,7 +70,7 @@ surf_raw_filtered = sorted(Face.sew_faces(surf_raw), key=lambda f: len(f))[-1]
 shell_raw = Shell.make_shell(surf_raw_filtered)
 
 # Take 2D point samples from the surface
-surf_array = []
+surf_lines = []
 for x_rel_int in tqdm(reversed(range(samples[0]))):
     x_rel = x_rel_int / (samples[0] - 1)
     x_abs = (x_rel) * (boot_rel_bb.size.X - boot_front_dist) + \
@@ -75,22 +82,23 @@ for x_rel_int in tqdm(reversed(range(samples[0]))):
     tmp = shell_raw.intersect(extrude(plane, amount=1)
                               ).edges().group_by(Axis.X)[0]
     with BuildLine() as curve:
-        full_line_points = list(  # Remove duplicates
-            sorted(set(map(lambda v: v.center(), tmp.vertices())), key=lambda p: p.Y))
+        full_line_points = set(map(lambda v: v.center(), tmp.vertices()))
+        # Sort them by angle from the center
+        full_line_points = sorted(
+            full_line_points, key=lambda p: atan2(p.Y, p.Z))
 
-        # HACK: Remove disconnected faces (due to inaccuracies)... the ugly way
-        full_line_points = [p for i, p in enumerate(full_line_points) if i == 0 or i == len(
-            full_line_points)-1 or p.Z > full_line_points[i-1].Z or p.Z > full_line_points[i+1].Z]
-
-        # HACK: Ignore sequences of points that are too close, which cause instability in the spline
-        full_line_points_new = [p for i, p in enumerate(full_line_points) if i == 0 or i == len(full_line_points)-1 or (
-            p - full_line_points[i-1]).length > min_samples_dist/2 or (
-            p - full_line_points[i+1]).length > min_samples_dist/2]
+        # # HACK: Ignore sequences of points that are too close, which cause instability in the spline
+        full_line_points_new = [p for i, p in enumerate(full_line_points) if i == 0 or i == len(full_line_points)-1 or ((
+            p - full_line_points[i-1]).length > min_samples_dist/2 and (
+            p - full_line_points[i+1]).length > min_samples_dist/2)]
         if len(full_line_points_new) == 1:  # Special degenerate case of a single point
             full_line_points_new.append(full_line_points[-1])
+        print("Reduced %d points to %d" %
+              (len(full_line_points), len(full_line_points_new)))
         full_line_points = full_line_points_new
 
         # Draw the spline, splitting input data in smoothing_neighbors chunks to avoid explosions
+        # spline = Spline(full_line_points)
         chunks = [full_line_points[i:i+spline_vertices]
                   for i in range(0, len(full_line_points), spline_vertices-2)]
         for chunk in chunks:
@@ -98,48 +106,27 @@ for x_rel_int in tqdm(reversed(range(samples[0]))):
                 continue  # Ignore single-point chunks
             spl = Spline(chunk)
 
-    samples_dat = [
-        curve.line@t for t in tqdm(map(lambda t: t / (samples[1]-1), range(samples[1])))]
+    curve_samples = [curve.line@(i/(samples[1] - 1))
+                     for i in range(samples[1])]
 
-    # TODO: Add a bottom layer of points at a fixed Z
-
-    surf_array.append(samples_dat)
+    surf_lines.append(curve_samples)
     # del tmp
 
-# HACK: Extend the surface for a clean cut later (to modify the edges)
-extend_by = boot_bb.size.Z/8
-minz = min([p.Z for l in surf_array for p in l])
+# HACK: Extend the surface to close it and for a clean cut later
+extend_by = boot_bb.size.Z/6
+minz = min([p.Z for l in surf_lines for p in l])
 print("Min Z: %f" % minz)
-for line in surf_array:
-    line.insert(0, Vector(line[0].X, line[0].Y, minz - extend_by))
-    line.append(Vector(line[-1].X, line[-1].Y, minz - extend_by))
+for line in surf_lines:
+    left_bottom = line[0]
+    right_bottom = line[-1]
+    line.append(Vector(right_bottom.X, right_bottom.Y, minz - extend_by))
+    line.append(Vector(left_bottom.X, left_bottom.Y, minz - extend_by))
+    line.append(left_bottom)
 
-# Also on the X axis
-surf_array.append([Vector(p.X - extend_by, p.Y, p.Z) for p in surf_array[-1]])
+# # Also on the X axis
+surf_lines.append([Vector(p.X - extend_by, p.Y, p.Z) for p in surf_lines[-1]])
 
-surf_array_debug = [p for l in surf_array for p in l]
-
-if "ocp_vscode" in locals():
-    ocp_vscode.reset_show()
-    ocp_vscode.show_all()
-
-# %%
-
-# Build a smooth surface from the samples
-surf = Face.make_surface_from_array_of_points(surf_array, max_deg=1).to_arcs
-assert surf.is_valid(), "Invalid surface, check params and actual samples"
-surf_shell = Shell.make_shell([surf])
-
-# print("surf_array: %s" % [len(l) for l in surf_array])
-# sweep_elems = []
-# # [Face.make_from_wires(
-# #    [Polyline([p for p in l], close=True)]) for l in surf_array]
-# for l in surf_array:
-#     if len(l) < 2:
-#         continue
-#     sweep_elems.append(Polyline([p for p in l], close=True))
-
-# surf = Solid.make_loft(sweep_elems, ruled=True)
+# surf_array_debug = [p for l in surf_lines for p in l]
 
 if "ocp_vscode" in locals():
     ocp_vscode.reset_show()
@@ -147,33 +134,23 @@ if "ocp_vscode" in locals():
 
 # %%
 
-# # HACK: Need to add back the front face, which is removed by the make_surface hack
-# front_edge_flipped = surf.edges().group_by(Axis.X)[-1]
-# front_wire_flipped = Wire.make_wire(front_edge_flipped.edges())
-# front_face_flipped = Face.make_from_wires(front_wire_flipped)
-# front_face_body = extrude(front_face_flipped,  # HACK
-#                           amount=10, dir=(1, 0, 0))
-# front_face: Face = front_face_body.faces().group_by(Axis.X)[0][0]
-# del front_face_body
-# del front_face_flipped
-# del front_wire_flipped
-# del front_edge_flipped
 
-# if "ocp_vscode" in locals():
-#     ocp_vscode.reset_show()
-#     ocp_vscode.show_all()
+line0 = surf_lines[0]
+surf_lines_poly = [Polyline(pts, close=True) for pts in surf_lines]
 
+surf = Solid.make_loft(surf_lines_poly, ruled=True)
+
+if "ocp_vscode" in locals():
+    ocp_vscode.reset_show()
+    ocp_vscode.show_all()
 
 # %%
-
-# MAKE SURE THE SURFACE IS NOT SELF-INTERSECTING (too much) BEFORE THICKENING!
-# Should only happen if max_deg > 1, but this is required to avoid thickening issues
 
 # Thicken the surface (slow operation)
 with BuildPart() as surf_thick:
     cut = boot_rel_clip.translate(
         (0, 0, minz - boot_rel_clip.bounding_box().min.Z))
-    add(surf.thicken(-(prot_offset+prot_thickness)))
+    add(surf)
     # add(surf.thicken(-prot_offset), mode=Mode.PRIVATE)
     add(cut, mode=Mode.INTERSECT)  # Clean cut for extensibility
 
