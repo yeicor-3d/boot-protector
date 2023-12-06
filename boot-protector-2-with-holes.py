@@ -23,7 +23,7 @@ final_model = getenv("final") is not None
 prot_clip_x = -6 * MM
 prot_clip_x_radius = 6 * CM
 prot_clip_z_offset = 4 * MM  # From automatic Z cut
-prot_z_extra = 8 * MM  # Verticall wall to add below cut
+prot_z_extra = 8 * MM  # Vertical wall to add below cut
 prot_thickness = 2 * wall  # Thickness of the protection (external)
 
 # Sewing parameters
@@ -35,7 +35,7 @@ sew_hole_sep = 2 * 2 * sew_hole_radius
 # Load the boot model, which must be aligned with the base at the origin, centered in X and Y and with forward direction in X+
 # Slow import...
 boot = Mesher().read(
-    "boot-protector-1-core-simpl-2.stl" if final_model else "boot-protector-1-core-simpl.stl")[0]
+    "boot-protector-1-core.stl" if final_model else "boot-protector-1-core-simpl.stl")[0]
 boot_bb = boot.bounding_box()
 
 # %%
