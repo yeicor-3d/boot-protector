@@ -37,10 +37,6 @@ boot = Mesher().read(
     "boot-protector-1-core.stl" if final_model else "boot-protector-1-core-simpl.stl")[0]
 boot_bb = boot.bounding_box()
 
-if "ocp_vscode" in locals():
-    ocp_vscode.reset_show()
-    ocp_vscode.show_all()
-
 # %%
 
 # Make proper clean edge cuts for further modification
@@ -52,10 +48,6 @@ boot_rel -= Cylinder(prot_clip_x_radius, boot_bb.size.Z).translate(
 print(boot_rel)
 boot_rel = boot_rel.solids()[0]
 print(boot_rel)
-
-if "ocp_vscode" in locals():
-    ocp_vscode.reset_show()
-    ocp_vscode.show_all()
 
 # %%
 
@@ -102,10 +94,6 @@ zcut_solid = extrude(zcut_face, amount=-boot_bb.size.Z * 2, dir=(0, 0, 1))
 boot_rel -= zcut_solid
 
 # TODO: Make hull of all the faces to intersect with the uneven cut
-
-if "ocp_vscode" in locals():
-    ocp_vscode.reset_show()
-    ocp_vscode.show_all()
 
 # %%
 
@@ -174,10 +162,6 @@ with BuildPart() as obj:
             # fillet(to_fillet, prot_thickness/2.1)
         except Exception as ex:
             print("Cannot fillet: %s" % ex)
-
-if "ocp_vscode" in locals():
-    ocp_vscode.reset_show()
-    ocp_vscode.show_all()
 
 # %%
 # ================== SHOWING/EXPORTING ==================
