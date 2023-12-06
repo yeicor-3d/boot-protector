@@ -4,6 +4,6 @@ You can download the latest builds from the [workflow runs](https://github.com/y
 
 You can preview the model in an interactive demo by clicking the following render of the latest design:
 
-[![boot-protector.png](https://yeicor-3d.github.io/boot-protector/models/boot-protector-with-holes/boot-protector-with-holes.png)](https://yeicor-3d.github.io/boot-protector/)
+[![boot-protector.png](https://yeicor-3d.github.io/boot-protector/models/boot-protector-2-with-holes/boot-protector-2-with-holes.png)](https://yeicor-3d.github.io/boot-protector/)
 
-![boot-protector.svg](https://yeicor-3d.github.io/boot-protector/models/boot-protector-with-holes/boot-protector-with-holes.svg)
+![boot-protector.svg](https://yeicor-3d.github.io/boot-protector/models/boot-protector-2-with-holes/boot-protector-2-with-holes.svg)
