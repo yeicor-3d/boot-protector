@@ -17,9 +17,10 @@ wall = 3 * wall_min  # Recommended width for most walls of this print
 eps = 1e-5 * MM  # A small number
 # Whether to generate the final model or a simplified one
 final_model = getenv("final") is not None
+final_model = True
 
 # Sampling surface parameters
-samples = 15, 20  # Number of samples along X and Y
+samples = 50, 50  # Number of samples along X and Y
 spline_vertices = 3  # Mitigates instability in the spline
 min_samples_dist = 2 * MM  # Mitigates instability in the spline
 boot_front_dist = tol  # Mitigates instability in the surface
@@ -49,6 +50,16 @@ boot_rel_clip = Box(
     .translate((boot_bb.center().X + prot_clip_x, boot_bb.center().Y, boot_bb.min.Z))
 boot_rel = boot & boot_rel_clip
 boot_rel_bb = boot_rel.bounding_box()
+
+# %%
+
+boot_rel_off = boot_rel.offset_3d([], 3)
+
+# %%
+
+if "ocp_vscode" in locals():
+    ocp_vscode.reset_show()
+    ocp_vscode.show_all()
 
 # %%
 
@@ -146,17 +157,44 @@ if "ocp_vscode" in locals():
 
 # %%
 
-# Thicken the surface (slow operation)
-with BuildPart() as surf_thick:
-    cut = boot_rel_clip.translate(
-        (0, 0, minz - boot_rel_clip.bounding_box().min.Z))
-    add(surf)
-    # add(surf.thicken(-prot_offset), mode=Mode.PRIVATE)
-    add(cut, mode=Mode.INTERSECT)  # Clean cut for extensibility
+# HACK: Force triangulation to avoid extrusion issues
+
+surf.tessellate(0.1 * MM)
+surf.export_step("/tmp/surf.step")
+
+# %%
+
+surf_imported = import_step("/tmp/surf.step")
+# surf_imported = Mesher().read("/tmp/surf.3mf")
+# surf_imported = Mesher().read("/tmp/surf.stl")
+# surf_imported = import_stl("/tmp/surf.stl")
 
 if "ocp_vscode" in locals():
     ocp_vscode.reset_show()
     ocp_vscode.show_all()
+
+# %%
+
+surf_top = surf_imported.faces()
+surf_top -= surf_top.group_by(Axis.X)[0]
+surf_top -= surf_top.group_by(Axis.Z)[0]
+
+# # Thicken the surface (slow operation)
+# with BuildPart() as surf_thick:
+#     cut = boot_rel_clip.translate(
+#         (0, 0, minz - boot_rel_clip.bounding_box().min.Z))
+#     # # surf_top_edges = surf_top.edges()
+#     # add(extrude(surf_top, 10, (0, 0, 1)), mode=Mode.ADD)
+#     # # add(surf.thicken(-prot_offset), mode=Mode.PRIVATE)
+#     # add(cut, mode=Mode.INTERSECT)  # Clean cut for extensibility
+
+if "ocp_vscode" in locals():
+    ocp_vscode.reset_show()
+    ocp_vscode.show_all()
+
+# %%
+
+surf_top_thick = extrude(surf_top, 10, (1, 0, 1))
 
 # %%
 
