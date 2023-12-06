@@ -22,7 +22,8 @@ final_model = getenv("final") is not None
 # Protection parameters
 prot_clip_x = -6 * MM
 prot_clip_x_radius = 6 * CM
-prot_z_extra = 5 * MM  # Distance from floor (which is at origin)
+prot_clip_z_offset = 4 * MM  # From automatic Z cut
+prot_z_extra = 8 * MM  # Verticall wall to add below cut
 prot_thickness = 2 * wall  # Thickness of the protection (external)
 
 # Sewing parameters
@@ -34,7 +35,7 @@ sew_hole_sep = 2 * 2 * sew_hole_radius
 # Load the boot model, which must be aligned with the base at the origin, centered in X and Y and with forward direction in X+
 # Slow import...
 boot = Mesher().read(
-    "boot-protector-1-core.stl" if final_model else "boot-protector-1-core-simpl.stl")[0]
+    "boot-protector-1-core-simpl-2.stl" if final_model else "boot-protector-1-core-simpl.stl")[0]
 boot_bb = boot.bounding_box()
 
 # %%
@@ -65,7 +66,7 @@ for face in faces:
 corner_edges = [edge for edge, faces in edge_to_faces.items()
                 if len(faces) < 2]
 rel_corner_edges = [edge for edge in corner_edges if abs(
-    (edge % 0.5).Z) < 0.5 and (edge @ 0.5).Z < shell.center().Z]
+    (edge % 0.5).Z) < 0.5 and (edge @ 0.5).Z < boot_bb.min.Z + boot_bb.size.Z/4]
 
 # - Remove fully disconnected edges
 vert_to_edges = {}
@@ -86,14 +87,12 @@ u_norm = vh[2, :]
 u_forw = vh[0, :]
 print("Plane normal: %s" % u_norm)
 zcut_face = Face.make_rect(boot_bb.size.Y * 3, boot_bb.size.Y * 3,
-                           Plane(G, Vector(*u_forw), Vector(*u_norm)))
+                           Plane(Vector(*G) + Vector(0, 0, prot_clip_z_offset), Vector(*u_forw), Vector(*u_norm)))
 zcut_solid = extrude(zcut_face, amount=-boot_bb.size.Z * 2, dir=(0, 0, 1))
 # rel_plane = Plane(sum(rel_positions) / len(rel_positions), rel_normal)
 
 # - Actual cut
 boot_rel -= zcut_solid
-
-# TODO: Make hull of all the faces to intersect with the uneven cut
 
 # %%
 
@@ -162,6 +161,13 @@ with BuildPart() as obj:
             # fillet(to_fillet, prot_thickness/2.1)
         except Exception as ex:
             print("Cannot fillet: %s" % ex)
+
+# %%
+
+# Extras: extend bottom face along Z-
+with obj:
+    obj_bottom_face = obj.faces().sort_by(SortBy.AREA)[-1]
+    extrude(obj_bottom_face, amount=prot_z_extra, dir=(0, 0, -1))
 
 # %%
 # ================== SHOWING/EXPORTING ==================
