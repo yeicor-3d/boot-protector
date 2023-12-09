@@ -44,7 +44,7 @@ with BuildPart() as obj:
 export = True
 try:
     if "show_object" in locals():
-        show_object(obj, "boot-protector-2-with-holes")  # type: ignore
+        show_object(obj, "boot-protector")  # type: ignore
         export = False
     elif "ocp_vscode" in locals():
         ocp_vscode.reset_show()
@@ -54,6 +54,6 @@ except Exception as ex:
     print("Cannot show model, exporting to STL instead (%s)" % ex)
 
 if export:
-    obj.part.export_stl("boot-protector-2-with-holes.stl")
+    obj.part.export_stl("boot-protector.stl")
 
 # %%
